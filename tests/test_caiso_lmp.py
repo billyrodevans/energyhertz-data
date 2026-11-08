@@ -52,11 +52,19 @@ def test_duplicate_row_is_an_error():
 
 
 def test_out_of_range_is_a_warning_not_dropped():
-    big = {"LMP": 2500.0, "MCE": 2500.0, "MCC": 0.0, "MCL": 0.0, "MGHG": 0.0}
+    big = {"LMP": 9999.0, "MCE": 9999.0, "MCC": 0.0, "MCL": 0.0, "MGHG": 0.0}
     values, meta, _ = transform.parse_hour(make_files(big))
     start = "2026-11-08T03:00:00+00:00"
     issues = validate.check_interval(start, values[start], meta[start]["end"])
     assert [i.severity for i in issues] == ["warning"]
+
+
+def test_real_prices_past_bid_floor_do_not_alert():
+    # -150.19 was a real CAISO LMP on 2026-11-07
+    real = {"LMP": -150.19243, "MCE": -150.0, "MCC": 0.0, "MCL": -0.19243, "MGHG": 0.0}
+    values, meta, _ = transform.parse_hour(make_files(real))
+    start = "2026-11-08T03:00:00+00:00"
+    assert validate.check_interval(start, values[start], meta[start]["end"]) == []
 
 
 def test_missing_interval_is_info_first_then_warning_on_retry():

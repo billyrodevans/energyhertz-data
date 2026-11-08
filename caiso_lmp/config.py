@@ -36,11 +36,12 @@ KEEP_INTERVALS = 96  # 24 hours of 15-minute intervals
 # Sum check tolerance ($/MWh). CAISO publishes 5 decimals, so 4 rounded parts can be off by < 0.00003.
 SUM_TOLERANCE = 0.0001
 
-# Values outside this range are flagged for review (warning, not dropped): they can be real.
-# CAISO's energy bid floor is -$150/MWh and its hard bid cap is $2,000/MWh; LMPs can still
-# fall outside this range under constraint relaxation or scarcity pricing.
-PLAUSIBLE_MIN = -150.0
-PLAUSIBLE_MAX = 2000.0
+# Sanity bounds, not market limits: catch corrupted data (e.g. wrong units, garbled numbers),
+# not unusual-but-real prices. Real LMPs can go past CAISO's -$150 bid floor and $2,000 hard cap
+# (seen 2026-11-07: -$150.19 at three nodes), so the bounds sit well outside both.
+# Values outside are flagged for review (warning) and still published as-is.
+PLAUSIBLE_MIN = -5000.0
+PLAUSIBLE_MAX = 5000.0
 
 # Rough box around the Western Interconnection, for checking node coordinates.
 WEST_LAT = (25.0, 56.0)
