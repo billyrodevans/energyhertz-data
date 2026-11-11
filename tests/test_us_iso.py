@@ -86,3 +86,10 @@ def test_hifld_names_map_to_group_bas():
     assert groups.hifld_code("SOUTHWEST POWER POOL") is None  # ISOs come from their own layer
     for code in groups.HIFLD_PREFIX.values():
         assert code.startswith("_") and code[1:] in groups.GROUPS or code in groups.GROUP_OF
+
+
+def test_ba_priority_is_california_only():
+    # Only compact California BAs override the ISO outline (see groups.BA_PRIORITY); EPE's outline is too broad.
+    from us_iso import groups
+    assert groups.BA_PRIORITY == {"BANC", "TIDC", "LDWP", "IID"}
+    assert all(groups.GROUP_OF[b] == "CA-OTHER" for b in groups.BA_PRIORITY)

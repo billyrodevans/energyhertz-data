@@ -104,12 +104,32 @@ def hifld_code(name: str) -> str | None:
     return None
 
 
+# HIFLD outlines overlap. Where a BA overlaps an ISO outline, the ISO normally wins: co-op and federal
+# BAs (AECI, SPA, WAPA, ...) interleave county by county with ISO utilities. These BAs are compact
+# city/district service areas that are known not to be in the ISO drawn over them, so their own
+# outline wins and is cut out of the ISO outline (e.g. SMUD, Modesto ID, Roseville and Redding in BANC
+# are not CAISO). Checked against PG&E/SCE towns nearby (none fall inside). Not El Paso Electric: its
+# HIFLD outline is far too broad (covers ERCOT towns such as Fort Stockton, Alpine and Presidio).
+BA_PRIORITY = {"BANC", "TIDC", "LDWP", "IID"}
+
+
 def group_shapes(features: list[dict], iso_features: list[dict], simplify: float = 0.01) -> tuple[list[dict], list[str]]:
-    """One (multi)polygon per group: union of member BA areas, minus ISO areas and earlier groups."""
+    """One (multi)polygon per group: union of member BA areas, minus ISO areas and earlier groups.
+
+    BA_PRIORITY areas are cut out of the ISO outlines instead (iso_features are changed in place)."""
     from shapely.geometry import mapping, shape
     from shapely.ops import unary_union
 
     notes = []
+    prio = unary_union([shape(f["geometry"]).buffer(0) for f in features
+                        if hifld_code(f["properties"].get("NAME", "")) in BA_PRIORITY])
+    for f in iso_features:
+        g0 = shape(f["geometry"]).buffer(0)
+        cut = g0.intersection(prio).area
+        if cut > 0.0025:
+            f["geometry"] = _round(mapping(g0.difference(prio)))
+            notes.append(f"ISO outline {f['properties'].get('iso')}: {cut / g0.area:.1%} of its area cut out for "
+                         f"BAs drawn with priority ({', '.join(sorted(BA_PRIORITY))})")
     iso = unary_union([shape(f["geometry"]).buffer(0) for f in iso_features])
     members: dict[str, list] = {g: [] for g in GROUP_ORDER}
     for f in features:
