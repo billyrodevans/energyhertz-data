@@ -9,6 +9,7 @@ Nothing is ever corrected, filled in, or dropped silently.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -23,6 +24,17 @@ class Issue:
 
     def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.check}: {self.message}"
+
+
+def value_uncertainty(value: float) -> float:
+    """How far a published CAISO price can be from its exact value, from rounding alone.
+
+    Single-precision step size at this magnitude (2^(exponent - 23)) plus one step in the
+    5th decimal. E.g. 52.6 -> 0.000014, 876.6 -> 0.000071, 2029 -> 0.000132, 2073 -> 0.000254.
+    """
+    v = abs(value)
+    step = 2.0 ** (math.floor(math.log2(v)) - config.FLOAT32_MANTISSA_BITS) if v > 0 else 0.0
+    return step + config.DECIMAL_STEP
 
 
 def check_interval(start_iso: str, nodes: dict[str, dict[str, float]], end_iso: str) -> list[Issue]:
@@ -49,8 +61,9 @@ def check_interval(start_iso: str, nodes: dict[str, dict[str, float]], end_iso: 
         if set(v) != set(config.FIELD_ORDER):
             continue
         parts = v["energy"] + v["congestion"] + v["loss"] + v["ghg"]
-        if abs(parts - v["lmp"]) > config.SUM_TOLERANCE:
-            sum_bad.append(f"{node} (LMP {v['lmp']}, parts sum {parts:.5f})")
+        allowed = sum(value_uncertainty(v[f]) for f in config.FIELD_ORDER)
+        if abs(parts - v["lmp"]) > allowed:
+            sum_bad.append(f"{node} (LMP {v['lmp']}, parts sum {parts:.5f}, allowed ±{allowed:.5f})")
         if not (config.PLAUSIBLE_MIN <= v["lmp"] <= config.PLAUSIBLE_MAX):
             out_of_range.append(f"{node} ({v['lmp']})")
     if sum_bad:

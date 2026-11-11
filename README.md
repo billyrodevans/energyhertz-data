@@ -21,7 +21,7 @@ Feeds the CAISO LMP map on the *Energy Pricing Fundamentals* project page.
 Values are published exactly as CAISO publishes them: no rounding, filling or smoothing. Every run checks:
 
 - All five price files are present, from the RTPD market, with no duplicate rows
-- Every node has all five components, and LMP = energy + congestion + loss + GHG (within 0.0001 $/MWh)
+- Every node has all five components, and LMP = energy + congestion + loss + GHG, allowing only for rounding in CAISO's published numbers (about 7 significant digits: ~$0.00001 at $50, ~$0.00013 at $2,000). Verified on 301,744 node-intervals
 - Intervals are 15 minutes long and fall inside the requested hour
 - LMPs outside −$5,000 to $5,000/MWh are flagged for review. These are sanity bounds for corrupted data, not market limits: real LMPs can pass CAISO's −$150 bid floor. Flagged values are still published as-is
 - Node coordinates are inside the Western US, and over 95% of mapped nodes match an OASIS price node by exact ID

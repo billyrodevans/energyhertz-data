@@ -33,8 +33,14 @@ INTERVAL_MINUTES = 15
 INTERVALS_PER_HOUR = 4
 KEEP_INTERVALS = 96  # 24 hours of 15-minute intervals
 
-# Sum check tolerance ($/MWh). CAISO publishes 5 decimals, so 4 rounded parts can be off by < 0.00003.
-SUM_TOLERANCE = 0.0001
+# Sum check precision. CAISO's published prices behave like single-precision numbers
+# (about 7 significant digits) written with up to 5 decimals, so the last digit of a large
+# price is uncertain: ~$0.00006 at $900, ~$0.00012 at $2,000. Each value's allowance is
+# its single-precision step size plus one 5th-decimal step; the check allows the sum of the
+# five allowances. Verified 2026-11-10 on 301,744 node-intervals (worst case used 54%).
+# See validate.value_uncertainty().
+FLOAT32_MANTISSA_BITS = 23
+DECIMAL_STEP = 0.00001
 
 # Sanity bounds, not market limits: catch corrupted data (e.g. wrong units, garbled numbers),
 # not unusual-but-real prices. Real LMPs can go past CAISO's -$150 bid floor and $2,000 hard cap

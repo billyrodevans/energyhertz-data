@@ -37,6 +37,36 @@ def test_component_sum_mismatch_is_an_error():
     assert any(i.severity == "error" and i.check == "components" for i in issues)
 
 
+def test_real_large_prices_pass_sum_check():
+    # Real CAISO values that failed the old fixed 0.0001 tolerance (2026-11-09 to 11-11).
+    cases = [
+        {"LMP": 1093.5219, "MCE": 1000, "MCC": -1.37821, "MCL": 94.9, "MGHG": 0},           # diff 0.00011
+        {"LMP": -2028.9929, "MCE": 41.06527, "MCC": -2072.7307, "MCL": -10.92759, "MGHG": 13.6},  # diff 0.00012
+        {"LMP": 924.457, "MCE": 876.5918, "MCC": -4.73038, "MCL": 52.59551, "MGHG": 0},     # diff 0.00007
+    ]
+    start = "2026-11-08T03:00:00+00:00"
+    for parts in cases:
+        values, meta, _ = transform.parse_hour(make_files(parts))
+        assert validate.check_interval(start, values[start], meta[start]["end"]) == [], parts
+
+
+def test_large_price_real_mismatch_still_fails():
+    # Off by one cent at $2,000: far beyond rounding, must be blocked.
+    bad = {"LMP": -2029.0029, "MCE": 41.06527, "MCC": -2072.7307, "MCL": -10.92759, "MGHG": 13.6}
+    values, meta, _ = transform.parse_hour(make_files(bad))
+    start = "2026-11-08T03:00:00+00:00"
+    issues = validate.check_interval(start, values[start], meta[start]["end"])
+    assert any(i.check == "components" and i.severity == "error" for i in issues)
+
+
+def test_value_uncertainty_grows_with_magnitude():
+    assert validate.value_uncertainty(0) == 0.00001
+    assert 0.0000138 < validate.value_uncertainty(52.6) < 0.0000139
+    assert 0.0000710 < validate.value_uncertainty(876.6) < 0.0000711
+    assert 0.0001320 < validate.value_uncertainty(-2028.99) < 0.0001321
+    assert 0.0002541 < validate.value_uncertainty(-2072.73) < 0.0002542
+
+
 def test_missing_component_is_an_error():
     files = make_files()
     files.pop("x_MGHG.csv")
