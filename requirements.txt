@@ -1,6 +1,7 @@
 # Runtime
 requests==2.32.3   # HTTP downloads from CAISO
 boto3==1.35.36     # Uploads to Cloudflare R2 (R2 speaks the Amazon S3 protocol)
+tzdata==2024.2     # time zone data (needed on Windows for Pacific-time operating days)
 
 # Development
 pytest==8.3.3

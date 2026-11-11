@@ -164,6 +164,38 @@ def test_day_file_rounds_to_cents_and_fixes_one_scale(tmp_path):
     assert out["scale"]["min"] == -6.8 and out["scale"]["max"] == 1093.5219
 
 
+def test_dlap_operating_day_lengths_follow_daylight_saving():
+    from datetime import date
+    from caiso_lmp import dlap
+
+    hours = lambda d: int((dlap.day_bounds(d)[1] - dlap.day_bounds(d)[0]).total_seconds() // 3600)
+    assert hours(date(2026, 11, 11)) == 24
+    assert hours(date(2026, 3, 8)) == 23   # clocks spring forward
+    assert hours(date(2026, 11, 1)) == 25  # clocks fall back
+
+
+def test_dlap_parse_and_check():
+    from caiso_lmp import dlap
+
+    head = "INTERVALSTARTTIME_GMT,INTERVALENDTIME_GMT,OPR_DT,OPR_HR,OPR_INTERVAL,NODE_ID_XML,NODE_ID,NODE,MARKET_RUN_ID,LMP_TYPE,XML_DATA_ITEM,PNODE_RESMRID,GRP_TYPE,POS,MW,GROUP\n"
+    real = {"LMP": 41.07964, "MCE": 36.28034, "MCC": 4.79929, "MCL": 0, "MGHG": 0}  # PG&E DLAP, 2026-11-11 HE8
+    rows = []
+    for h in range(24):
+        s = datetime(2026, 11, 11, 8, tzinfo=timezone.utc).timestamp() + h * 3600
+        a = datetime.fromtimestamp(s, timezone.utc).isoformat()
+        b = datetime.fromtimestamp(s + 3600, timezone.utc).isoformat()
+        for node in ("DLAP_PGAE-APND", "DLAP_SCE-APND", "DLAP_SDGE-APND", "DLAP_VEA-APND"):
+            for c, v in real.items():
+                rows.append(f"{a},{b},2026-11-11,{h + 1},1,{node},{node},{node},DAM,{c},X,{node},ALL,1,{v},1")
+    parsed, issues = dlap.parse({"x.csv": head + "\n".join(rows) + "\n"})
+    assert issues == [] and list(parsed) == ["2026-11-11"]
+    assert dlap.check_day("2026-11-11", parsed["2026-11-11"]) == []
+    # Remove one hour: the day must fail and not be published
+    day = dict(parsed["2026-11-11"])
+    day.pop(sorted(day)[5])
+    assert any(i.severity == "error" for i in dlap.check_day("2026-11-11", day))
+
+
 def test_price_map_rejects_points_outside_west():
     feed = {"l": [{"m": [
         {"t": "Node", "n": "OK", "c": [37.0, -120.0], "a": "CA", "p": "GEN"},

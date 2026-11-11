@@ -17,7 +17,7 @@ import argparse
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import config, day, fetch, publish, transform, validate
+from . import config, day, dlap, fetch, publish, transform, validate
 from .validate import Issue
 
 
@@ -174,6 +174,12 @@ def main(argv: list[str] | None = None) -> int:
         entries += new
         if unpriced is not None:
             previous_unpriced = unpriced
+
+    # Day-ahead utility-area (DLAP) prices: downloads only when a day is missing (~once a day).
+    try:
+        dlap.refresh(store, utc_now(), issues)
+    except Exception as exc:
+        issues.append(Issue("error", "dlap", f"Day-ahead DLAP refresh failed: {exc}"))
 
     errors = [i for i in issues if i.severity == "error"]
     warnings = [i for i in issues if i.severity == "warning"]

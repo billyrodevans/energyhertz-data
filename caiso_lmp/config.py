@@ -8,6 +8,19 @@ OASIS_GROUP_URL = "https://oasis.caiso.com/oasisapi/GroupZip"
 OASIS_GROUP_ID = "RTPD_LMP_GRP"
 OASIS_VERSION = "3"
 
+# Day-ahead prices for the four Default Load Aggregation Points (DLAPs): the price load in each
+# utility area pays. One small request per day (PRC_LMP, DAM), published ~1 PM PT for the next day.
+OASIS_SINGLE_URL = "https://oasis.caiso.com/oasisapi/SingleZip"
+OASIS_DAM_VERSION = "12"
+DLAPS = {  # short code -> (OASIS node, label)
+    "PGAE": ("DLAP_PGAE-APND", "PG&E"),
+    "SCE": ("DLAP_SCE-APND", "SCE"),
+    "SDGE": ("DLAP_SDGE-APND", "SDG&E"),
+    "VEA": ("DLAP_VEA-APND", "VEA"),
+}
+MARKET_TZ = "America/Los_Angeles"  # CAISO operating days run midnight to midnight Pacific time
+DAM_PUBLISHED_AFTER_PT = (13, 30)  # look for tomorrow's day-ahead prices after 1:30 PM PT
+
 # Node coordinates: the JSON feed behind CAISO's public price map
 # (https://www.caiso.com/todays-outlook/prices). Approximate, substation-level positions.
 PRICE_MAP_URL = "https://wwwmobile.caiso.com/Web.Service.Chart/api/v3/ChartService/PriceContourMap1"

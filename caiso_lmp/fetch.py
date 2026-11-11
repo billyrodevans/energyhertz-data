@@ -91,6 +91,40 @@ def fetch_hour(hour_start: datetime) -> RawHour:
     return RawHour(hour_start=hour_start, url=resp.url, retrieved_utc=retrieved, files=files)
 
 
+class NotPublished(FetchError):
+    """OASIS had no data for the request (e.g. tomorrow's day-ahead prices before ~1 PM PT)."""
+
+
+def fetch_dam_dlaps(start: datetime, end: datetime) -> RawHour:
+    """Day-ahead (DAM) hourly prices for the four DLAPs between two times (one request)."""
+    params = {
+        "queryname": "PRC_LMP",
+        "market_run_id": "DAM",
+        "node": ",".join(node for node, _ in config.DLAPS.values()),
+        "startdatetime": oasis_time(start),
+        "enddatetime": oasis_time(end),
+        "resultformat": "6",
+        "version": config.OASIS_DAM_VERSION,
+    }
+    resp = _get(config.OASIS_SINGLE_URL, params)
+    retrieved = datetime.now(timezone.utc)
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    except zipfile.BadZipFile as exc:
+        raise FetchError(f"OASIS did not return a zip file ({len(resp.content)} bytes)") from exc
+    files = {}
+    for name in zf.namelist():
+        text = zf.read(name).decode("utf-8", errors="strict")
+        if name.lower().endswith(".xml"):
+            if "No data returned" in text:
+                raise NotPublished("OASIS has no day-ahead data for that period yet")
+            raise FetchError(f"OASIS returned a message instead of data: {text[:500]}")
+        files[name] = text
+    if not files:
+        raise FetchError("OASIS zip was empty")
+    return RawHour(hour_start=start, url=resp.url, retrieved_utc=retrieved, files=files)
+
+
 def fetch_price_map() -> tuple[dict, datetime]:
     """Download the price map feed (used only for node coordinates)."""
     resp = _get(config.PRICE_MAP_URL)

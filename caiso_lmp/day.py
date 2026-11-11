@@ -34,10 +34,15 @@ def build_day(store, index: dict, located: dict[str, dict]) -> dict | None:
         files = list(pool.map(lambda e: store.get_json(prefix + e["file"]), entries))
 
     rows, kept, all_lmps = [], [], []
+    # 15-minute LMP at each utility area's DLAP, exact as published (for the utility price chart).
+    dlap_fmm: dict[str, list[float | None]] = {code: [] for code in config.DLAPS}
     for e, iv in zip(entries, files):
         if iv is None:  # listed in the index but missing from storage: skip, never invent
             continue
         prices = iv["prices"]
+        for code, (node, _) in config.DLAPS.items():
+            p = prices.get(node)
+            dlap_fmm[code].append(p[0] if p else None)
         row = []
         for n in order:
             p = prices.get(n)
@@ -66,5 +71,6 @@ def build_day(store, index: dict, located: dict[str, dict]) -> dict | None:
             "basis": "2nd to 98th percentile of every mapped LMP in the window",
         },
         "outlier_bounds": [config.PLAUSIBLE_MIN, config.PLAUSIBLE_MAX],
+        "dlap_fmm": dlap_fmm,
         "lmp_cents": rows,
     }
