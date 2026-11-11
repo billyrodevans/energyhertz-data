@@ -38,6 +38,26 @@ Values are published exactly as CAISO publishes them: no rounding, filling or sm
 | `day.json` | Whole window in one file for the map slider: each mapped node's LMP rounded to the cent (colors only) plus one fixed color scale (2nd–98th percentile of the window), and each DLAP's exact 15-minute LMP. Exact values stay in `intervals/` |
 | `intervals/YYYYMMDDTHHMMZ.json` | Interval start/end (UTC), CAISO file names, OASIS request URL, retrieval time, warnings, `outliers` (node IDs outside the sanity bounds), and `prices: {node_id: [lmp, energy, congestion, loss, ghg]}` |
 
+## US ISO comparison (`us_iso/`)
+
+Feeds the US map on the *Energy Pricing Fundamentals* project page: customers, average retail price and generation mix for the seven ISOs/RTOs, plus utility lists. Built once a year (`python -m us_iso.build --r2 --year 2025`); a monthly check (`python -m us_iso.validate --r2`, 12th of each month) tests the estimates against fresh data and reports to a GitHub issue.
+
+| Output (`us-iso/`) | Contents | Source |
+|---|---|---|
+| `regions.json` | Per ISO: customer accounts, retail MWh, average retail price (all sectors), generation mix, renewable share; CAISO also with estimated imports | EIA Form 861; EIA Form 923; EIA-930 (flows) |
+| `utilities.json` | Per ISO: every utility / retail provider: customers, bundled-service price, share of customers buying from another supplier | EIA Form 861 |
+| `residual.json` | Estimated mix of California's "unspecified" market power | CEC Power Content Labels + EIA-923 + EIA-930 |
+| `boundaries.geojson` | ISO boundaries, simplified | HIFLD (approximate, as of 2020) |
+
+### Methods
+
+- **Customers and prices (EIA-861 Schedule 4).** Part A = bundled, B = energy-only (e.g. CCAs), C = delivery-only, D = Texas retail providers. Each customer appears once in A, C or D (B duplicates C), so customers and MWh = A + C + D and revenue = A + B + C + D. Withheld cells (".") are missing, never zero. Utilities are assigned to ISOs by the balancing-authority code on each row.
+- **Generation mix (EIA-923, plant level, final).** Annual net generation of every power plant located in each ISO's balancing authority, by fuel: the same definition for all seven regions. Utility-scale and industrial plants only (rooftop solar excluded). Storage is net and kept out of the pie. *Generation from plants within the ISO's territory: the power a utility or customer actually buys can differ because of purchase agreements and imports.*
+- **Why not EIA-930 or CAISO's own data for the mix (checked 2026-11-12):** EIA-930's hourly fuel labels for CAISO overstate gas by ~20 TWh in 2025 versus EIA-923, and EIA-930 reports biomass/waste as "other" in NYISO and ISO-NE. CAISO's own fuel data agrees with EIA-923 within a few points (it counts some out-of-state plants it dispatches and excludes industrial on-site use) and is kept as a cross-check.
+- **CAISO imports (estimated).** Flow tracing: every hour, power in each Western US balancing authority is its own generation plus inflows from neighbors, mixed proportionally, solved as one linear system (EIA-930 generation and interchange), so imports are traced back through intermediate grids to the generating source. Each grid's EIA-930 "other/unknown" generation is split into the sources EIA-923 shows it has but EIA-930 omits (e.g. NV Energy geothermal); all other EIA-930 fuels are used as reported. Flows from outside the traced area (e.g. Canada, Mexico) are "unattributed"; hours with no flow data are skipped.
+- **Residual mix (estimated).** California supply by fuel (EIA-923 plants in CAISO, BANC, LADWP, TIDC, IID + traced imports into California) minus all specified power claimed on the CEC Power Content Labels; the remainder approximates what untraceable "unspecified" market power is made of. Annual, statewide approximation; small and large hydro combined; negative remainders set to zero and reported (wind: contracted out-of-state wind exceeds what is physically traced into California).
+- **Checks.** Missing hours/days, layout changes, unattributed imports above 2%, "other/unknown" above 5% of a mix, CAISO vs EIA-930 import totals differing by more than 25%. Every warning is posted to the "US ISO estimates: checks" issue.
+
 ## Run it yourself
 
 Requires Python 3.10+.
@@ -54,7 +74,7 @@ Uploading to R2 (`--r2`) needs these environment variables: `R2_ACCOUNT_ID`, `R2
 
 ## Data sources and terms
 
-Data: **California ISO**. Used under the [CAISO Terms of Use](https://www.caiso.com/privacy-terms-of-use), which allow use of public materials with credit to the California ISO. CAISO provides the data "as is". For official values, see [OASIS](https://oasis.caiso.com/). This project is not affiliated with or endorsed by the California ISO.
+Data: **California ISO**; **U.S. Energy Information Administration** (EIA-861, EIA-930; public domain); **California Energy Commission** (Power Content Labels); ISO boundaries from **HIFLD** (public use). Used under the [CAISO Terms of Use](https://www.caiso.com/privacy-terms-of-use), which allow use of public materials with credit to the California ISO. CAISO provides the data "as is". For official values, see [OASIS](https://oasis.caiso.com/). This project is not affiliated with or endorsed by the California ISO.
 
 The code in this repository is MIT licensed (see `LICENSE`). The data belongs to its sources and stays under their terms.
 

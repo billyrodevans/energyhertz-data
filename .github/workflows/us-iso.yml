@@ -1,0 +1,68 @@
+# US ISO comparison: yearly build (run by hand) and a monthly validity check.
+# The monthly check runs on the 12th (first run 2026-12-12) and always opens/updates an issue,
+# so Billy hears about it directly whatever else is going on.
+name: US ISO data
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "build (yearly data) or validate (monthly check)"
+        required: true
+        default: validate
+        type: choice
+        options: [validate, build]
+      year:
+        description: "Data year for build (default: last year)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 17 12 * *" # 12th of each month, 17:00 UTC (9-10 AM Pacific)
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: us-iso
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Run
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          TASK: ${{ inputs.task || 'validate' }}
+          YEAR: ${{ inputs.year }}
+        run: |
+          if [ "$TASK" = "build" ]; then
+            python -m us_iso.build --r2 ${YEAR:+--year "$YEAR"}
+          else
+            python -m us_iso.validate --r2
+          fi
+
+      - name: Report to an issue
+        if: always() && hashFiles('checks.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="US ISO estimates: checks"
+          num=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file checks.md
+          else
+            gh issue create --title "$title" --body-file checks.md
+          fi
