@@ -8,6 +8,9 @@ Outputs (folder "us-iso/" in the bucket):
     utilities.json      per ISO: every utility / retail provider (customers, bundled price, other-supplier share)
     residual.json       estimated mix of California's "unspecified" market power (residual mix)
     boundaries.geojson  HIFLD ISO boundaries (approximate, as of 2020), simplified
+    groups.json         regions without an ISO: groups of balancing authorities, each with its
+                        member BAs and their sums (see groups.py)
+    groups.geojson      group outlines from HIFLD Control Areas (approximate, 2018-2021)
     checks.md           every check and warning from this run (also opened as a GitHub issue)
 
 Generation mix for every region: EIA-923 (plant-level, final) = power plants located in the
@@ -24,7 +27,7 @@ from datetime import date, datetime, timezone
 
 from caiso_lmp.publish import LocalStore, R2Store  # same storage helpers as the price map
 
-from . import caiso_mix, eia861, eia923, eia930, residual, sources
+from . import caiso_mix, eia861, eia923, eia930, groups, residual, sources
 
 PREFIX = "us-iso"
 ISO_ORDER = ["CAISO", "ERCOT", "SPP", "MISO", "PJM", "NYISO", "ISO-NE"]
@@ -44,6 +47,7 @@ SOURCES = {
     "generation": {"name": "EIA Form 923 (plant-level generation, final)", "url": "https://www.eia.gov/electricity/data/eia923/"},
     "flows": {"name": "EIA-930 Hourly Electric Grid Monitor (interchange)", "url": "https://www.eia.gov/electricity/gridmonitor/"},
     "boundaries": {"name": "HIFLD Independent System Operators (approximate, as of 2020)", "url": "https://hifld-geoplatform.hub.arcgis.com/"},
+    "ba_boundaries": {"name": "HIFLD Control Areas (approximate, 2018-2021)", "url": "https://hifld-geoplatform.hub.arcgis.com/"},
     "labels": {"name": "CEC 2024 Power Content Labels", "url": "https://www.energy.ca.gov/programs-and-topics/programs/power-source-disclosure-program/power-content-label/annual-power-5"},
     "caiso_check": {"name": "California ISO, Today's Outlook fuel source history (cross-check)", "url": "https://www.caiso.com/todays-outlook/supply"},
 }
@@ -170,11 +174,17 @@ def main(argv=None) -> int:
     if unknown:
         warn.append(f"Boundary names not recognised: {unknown}")
 
+    # ---- Regions without an ISO: groups of balancing authorities ----
+    gdata, gutils, gshapes = groups.build(rows, plants, gj["features"], warn, info)
+
     built = datetime.now(timezone.utc).isoformat()
     store.put_json(f"{PREFIX}/regions.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": NOTES, "regions": regions}, "public, max-age=86400")
     store.put_json(f"{PREFIX}/utilities.json", {"year": y, "built_utc": built, "source": SOURCES["customers_price"], "utilities": utils}, "public, max-age=86400")
     store.put_json(f"{PREFIX}/residual.json", resid, "public, max-age=86400")
     store.put_json(f"{PREFIX}/boundaries.geojson", gj, "public, max-age=86400")
+    store.put_json(f"{PREFIX}/groups.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": groups.NOTES,
+                                             "excluded": groups.EXCLUDED, "groups": gdata, "utilities": gutils}, "public, max-age=86400")
+    store.put_json(f"{PREFIX}/groups.geojson", {"type": "FeatureCollection", "features": gshapes}, "public, max-age=86400")
 
     with open(a.checks_file, "w", encoding="utf-8") as fh:
         fh.write(f"## US ISO build {y} (labels {ly}): {'warnings' if warn else 'passed'}\n\n")

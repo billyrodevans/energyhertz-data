@@ -64,3 +64,25 @@ def test_residual_mix_subtracts_claims_and_never_goes_negative():
     shares, notes = residual.residual_mix(supply, claimed)
     assert abs(shares["gas"] - 100 / 110) < 1e-9 and abs(shares["solar"] - 10 / 110) < 1e-9
     assert shares["hydro"] == 0 and "hydro" in notes[0]
+
+
+def test_groups_are_disjoint_and_named():
+    from us_iso import eia861, groups
+    seen = {}
+    for g, v in groups.GROUPS.items():
+        for ba in v["bas"]:
+            assert ba not in seen, f"{ba} in both {seen.get(ba)} and {g}"
+            assert ba not in eia861.ISO_BY_BA, f"{ba} is an ISO"
+            assert ba not in groups.EXCLUDED
+            assert ba in groups.BA_NAMES
+            seen[ba] = g
+
+
+def test_hifld_names_map_to_group_bas():
+    from us_iso import groups
+    assert groups.hifld_code("TENNESSEE VALLEY AUTHORITY") == "TVA"
+    assert groups.hifld_code("PACIFICORP - EAST") == "PACE"
+    assert groups.hifld_code("POWERSOUTH ENERGY COOPERATIVE") == "_SOUTHEAST"
+    assert groups.hifld_code("SOUTHWEST POWER POOL") is None  # ISOs come from their own layer
+    for code in groups.HIFLD_PREFIX.values():
+        assert code.startswith("_") and code[1:] in groups.GROUPS or code in groups.GROUP_OF

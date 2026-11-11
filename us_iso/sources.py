@@ -27,6 +27,13 @@ HIFLD_ISO_URL = (
     "Independent_System_Operators/FeatureServer/0/query"
 )
 
+# Public copy of HIFLD "Control Areas" (balancing authority areas; source dates 2018-2021).
+# HIFLD Open data is US-government public domain; HIFLD Open itself was retired in 2025.
+HIFLD_CONTROL_AREAS_URL = (
+    "https://services.arcgis.com/jDGuO8tYggdCCnUJ/arcgis/rest/services/"
+    "HIFLD_control_areas_geojson/FeatureServer/0/query"
+)
+
 _last = 0.0
 
 
@@ -112,6 +119,17 @@ def pcl_2024() -> Path:
 def hifld_iso_boundaries() -> Path:
     # Server-side simplification keeps the file small (about 0.02 degrees, roughly 2 km).
     return cached("hifld/iso_boundaries.geojson", HIFLD_ISO_URL, params={
+        "where": "1=1",
+        "outFields": "NAME,SOURCE,SOURCEDATE,VAL_DATE",
+        "outSR": "4326",
+        "maxAllowableOffset": "0.02",
+        "geometryPrecision": "3",
+        "f": "geojson",
+    })
+
+
+def hifld_control_areas() -> Path:
+    return cached("hifld/control_areas.geojson", HIFLD_CONTROL_AREAS_URL, params={
         "where": "1=1",
         "outFields": "NAME,SOURCE,SOURCEDATE,VAL_DATE",
         "outSR": "4326",

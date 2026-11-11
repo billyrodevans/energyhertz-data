@@ -43,12 +43,15 @@ def load_sales(zip_path: Path, year: int) -> list[tuple]:
     return [r for r in rows[3:] if r and r[C_ID] is not None]
 
 
-def iso_totals(rows: list[tuple]) -> tuple[dict, list[str]]:
-    """Customers, MWh, revenue and average price per ISO, plus check messages."""
+def iso_totals(rows: list[tuple], region_of: dict | None = None) -> tuple[dict, list[str]]:
+    """Customers, MWh, revenue and average price per region (default: ISO), plus check messages.
+
+    region_of maps BA code -> region id; {ba: ba for ...} gives per-BA totals."""
+    region_of = ISO_BY_BA if region_of is None else region_of
     t = defaultdict(lambda: defaultdict(float))
     missing = defaultdict(int)
     for r in rows:
-        iso = ISO_BY_BA.get(r[C_BA])
+        iso = region_of.get(r[C_BA])
         if not iso:
             continue
         p = r[C_PART]
@@ -68,19 +71,20 @@ def iso_totals(rows: list[tuple]) -> tuple[dict, list[str]]:
             "avg_price_cents_kwh": round(rev_k * 1000 / (mwh * 1000) * 100, 2) if mwh else None,
             "customers_other_supplier": round(x["custC"]),
         }
-        if x["mwhB"] and abs(x["mwhB"] - x["mwhC"]) / x["mwhC"] > 0.02:
+        if x["mwhB"] and (not x["mwhC"] or abs(x["mwhB"] - x["mwhC"]) / x["mwhC"] > 0.02):
             notes.append(f"{iso}: energy-only MWh ({x['mwhB']:.0f}) and delivery-only MWh ({x['mwhC']:.0f}) differ by more than 2%")
         if missing[iso]:
             notes.append(f"{iso}: {missing[iso]} withheld/blank cells treated as missing")
     return out, notes
 
 
-def utilities(rows: list[tuple]) -> dict[str, list[dict]]:
-    """Per ISO, every utility / retail provider with its customers and bundled price."""
+def utilities(rows: list[tuple], region_of: dict | None = None) -> dict[str, list[dict]]:
+    """Per region (default: ISO), every utility / retail provider with its customers and bundled price."""
+    region_of = ISO_BY_BA if region_of is None else region_of
     u = defaultdict(lambda: defaultdict(float))
     meta = {}
     for r in rows:
-        iso = ISO_BY_BA.get(r[C_BA])
+        iso = region_of.get(r[C_BA])
         if not iso or r[C_PART] == "B":  # B (energy-only suppliers) shown via their delivery utility's split
             continue
         key = (iso, r[C_ID])
