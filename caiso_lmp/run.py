@@ -138,12 +138,24 @@ def main(argv: list[str] | None = None) -> int:
     where.add_argument("--r2", action="store_true", help="upload to Cloudflare R2 (needs R2_* environment variables)")
     parser.add_argument("--hour", help="UTC hour to fetch, e.g. 2026-11-08T03:00Z (default: current hour)")
     parser.add_argument("--alert-file", default="alert.md", help="where to write the issue report")
+    parser.add_argument("--skip-if-complete", action="store_true",
+                        help="backup run: exit without contacting CAISO if the current hour is already published")
     args = parser.parse_args(argv)
 
     store = publish.R2Store() if args.r2 else publish.LocalStore(args.out)
     started = utc_now()
     hour = (datetime.fromisoformat(args.hour.replace("Z", "+00:00")) if args.hour else started)
     hour = hour.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+    if args.skip_if_complete:
+        # GitHub sometimes skips a scheduled run. The backup run only does work if the
+        # main run's results are missing, so CAISO normally sees one request per hour.
+        index = store.get_json(f"{config.R2_PREFIX}/index.json") or {}
+        have = {e["start"] for e in index.get("intervals", [])}
+        wanted = [(hour + timedelta(minutes=15 * i)).isoformat() for i in range(config.INTERVALS_PER_HOUR)]
+        if all(w in have for w in wanted):
+            print("Backup run: current hour already complete, nothing to do.")
+            return 0
 
     issues: list[Issue] = []
     located = refresh_nodes(store, issues)

@@ -5,7 +5,8 @@ name: CAISO LMP refresh
 
 on:
   schedule:
-    - cron: "28 * * * *"
+    - cron: "28 * * * *" # main run
+    - cron: "48 * * * *" # backup: only contacts CAISO if the main run was skipped or incomplete
   workflow_dispatch:
     inputs:
       hour:
@@ -45,6 +46,8 @@ jobs:
         run: |
           if [ -n "$HOUR" ]; then
             python -m caiso_lmp.run --r2 --hour "$HOUR"
+          elif [ "${{ github.event.schedule }}" = "48 * * * *" ]; then
+            python -m caiso_lmp.run --r2 --skip-if-complete
           else
             python -m caiso_lmp.run --r2
           fi
