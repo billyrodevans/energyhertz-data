@@ -14,7 +14,7 @@ Feeds the CAISO LMP map on the *Energy Pricing Fundamentals* project page.
 | **Node locations** | California ISO price map ([caiso.com/todays-outlook/prices](https://www.caiso.com/todays-outlook/prices)). Approximate, substation-level positions |
 | **Coverage** | CAISO balancing area plus Western Energy Imbalance Market (WEIM) areas |
 | **Schedule** | Hourly at :28 UTC, plus a backup at :48 that only contacts CAISO if the :28 run was skipped or incomplete. One OASIS request per run, plus one retry of the previous hour only if intervals are missing. Node locations refreshed at most daily |
-| **Window kept** | Latest 24 hours (96 fifteen-minute intervals). Older files are deleted |
+| **Window kept** | Latest 24 hours (96 fifteen-minute intervals) plus up to 4 intervals CAISO publishes ahead (100 files). Older files are deleted |
 
 ### Data integrity rules
 

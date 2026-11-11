@@ -129,18 +129,18 @@ def test_poor_location_match_is_an_error():
     assert any(i.severity == "error" for i in issues)
 
 
-def test_retention_keeps_newest_96(tmp_path):
+def test_retention_keeps_newest_100(tmp_path):
     store = LocalStore(tmp_path)
     entries = []
-    for i in range(100):
+    for i in range(104):
         start = datetime(2026, 11, 7, tzinfo=timezone.utc).timestamp() + i * 900
         iso = datetime.fromtimestamp(start, timezone.utc).isoformat()
         key = interval_key(iso)
         store.put_json(key, {}, "")
         entries.append({"start": iso, "file": key.rsplit("/", 1)[-1]})
     index = prune_and_index(store, entries, {"finished_utc": "now"})
-    assert len(index["intervals"]) == 96
-    assert len(store.list_keys("caiso-lmp/intervals/")) == 96
+    assert len(index["intervals"]) == 100
+    assert len(store.list_keys("caiso-lmp/intervals/")) == 100
     assert index["intervals"][0]["start"] == entries[4]["start"]
 
 

@@ -31,7 +31,7 @@ FIELD_ORDER = ["lmp", "energy", "congestion", "loss", "ghg"]
 
 INTERVAL_MINUTES = 15
 INTERVALS_PER_HOUR = 4
-KEEP_INTERVALS = 96  # 24 hours of 15-minute intervals
+KEEP_INTERVALS = 100  # 24 hours of 15-minute intervals (96) + room for intervals CAISO publishes ahead
 
 # Sum check precision. CAISO's published prices behave like single-precision numbers
 # (about 7 significant digits) written with up to 5 decimals, so the last digit of a large
