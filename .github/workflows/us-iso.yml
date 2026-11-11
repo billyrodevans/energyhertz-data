@@ -54,6 +54,35 @@ jobs:
             python -m us_iso.validate --r2
           fi
 
+      # After a yearly build, clear Cloudflare's cache so data.energyhertz.com serves the new files
+      # right away (otherwise the old ones stay up to 24 h). Needs two repo secrets:
+      #   CF_ZONE_ID    the energyhertz.com zone ID (Cloudflare dashboard, zone Overview page)
+      #   CF_PURGE_TOKEN an API token limited to "Zone > Cache Purge > Purge" on that zone only
+      # Purging by URL didn't clear these files (2026-11-11), so this purges everything; the site
+      # itself is served by Workers, and the data files are simply fetched fresh on the next request.
+      - name: Purge Cloudflare cache
+        if: success() && inputs.task == 'build'
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_PURGE_TOKEN: ${{ secrets.CF_PURGE_TOKEN }}
+        run: |
+          if [ -z "$CF_ZONE_ID" ] || [ -z "$CF_PURGE_TOKEN" ]; then
+            echo "::warning::Cloudflare purge secrets not set; purge the cache by hand"
+            printf '\n- [ACTION] Cloudflare cache NOT purged automatically (secrets CF_ZONE_ID / CF_PURGE_TOKEN missing): run Purge Everything on energyhertz.com\n' >> checks.md
+            exit 0
+          fi
+          resp=$(curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache" \
+            -H "Authorization: Bearer $CF_PURGE_TOKEN" -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}')
+          if echo "$resp" | grep -q '"success":true'; then
+            echo "Cloudflare cache purged"
+            printf '\n- Cloudflare cache purged automatically after the build\n' >> checks.md
+          else
+            echo "::error::Cloudflare purge failed"
+            printf '\n- [WARNING] Cloudflare cache purge FAILED: run Purge Everything on energyhertz.com by hand\n' >> checks.md
+            exit 1
+          fi
+
       - name: Report to an issue
         if: always() && hashFiles('checks.md') != ''
         env:

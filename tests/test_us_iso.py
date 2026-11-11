@@ -88,8 +88,30 @@ def test_hifld_names_map_to_group_bas():
         assert code.startswith("_") and code[1:] in groups.GROUPS or code in groups.GROUP_OF
 
 
-def test_ba_priority_is_california_only():
-    # Only compact California BAs override the ISO outline (see groups.BA_PRIORITY); EPE's outline is too broad.
+def test_california_outside_caiso_covers_all_cec_bas():
+    # The CEC lists 8 BAs in California; every one except CAISO must be in "California outside CAISO".
     from us_iso import groups
-    assert groups.BA_PRIORITY == {"BANC", "TIDC", "LDWP", "IID"}
-    assert all(groups.GROUP_OF[b] == "CA-OTHER" for b in groups.BA_PRIORITY)
+    ca = set(groups.GROUPS["CA-OTHER"]["bas"])
+    assert ca == {"LDWP", "BANC", "IID", "TIDC", "PACW-CA", "NEVP-CA", "WALC-CA"}
+    assert groups.CEC_NON_CAISO == {"BANC", "IID", "LADWP", "NV Energy", "TID", "WALC", "PacificCorp West"}
+
+
+def test_ba_corrections_and_california_split():
+    from us_iso import groups
+    assert groups.corrected_ba(57483, "CA", "CISO") == "NEVP-CA"   # Liberty (Lake Tahoe): NV Energy BA
+    assert groups.corrected_ba(57483, "NH", "ISNE") == "ISNE"      # other Liberty companies untouched
+    assert groups.corrected_ba(19840, "NV", "NEVP") == "CISO"      # Valley Electric: CAISO since 2013
+    assert groups.corrected_ba(14354, "CA", "PACW") == "PACW-CA"   # PacifiCorp's California part
+    assert groups.corrected_ba(14354, "OR", "PACW") == "PACW"
+    assert groups.corrected_ba(16534, "CA", "BANC") == "BANC"      # SMUD
+
+
+def test_short_form_rows_use_long_layout():
+    from us_iso import eia861
+    assert (eia861.C_ID, eia861.C_STATE, eia861.C_BA, eia861.C_CUST) == (1, 6, 8, 23)
+
+
+def test_merge_split_adds_california_part_back():
+    from us_iso import eia923
+    merged = eia923.merge_split({"PACW": {"wind": 5.0}, "PACW-CA": {"wind": 1.0, "hydro": 2.0}})
+    assert merged == {"PACW": {"wind": 6.0, "hydro": 2.0}}

@@ -59,7 +59,8 @@ NOTES = {
                      "back to the generating grids, whose 'other' generation is split using EIA-923 plant data.",
     "renewable": "Renewable = solar, wind, hydro (all sizes), geothermal and biomass, following EIA. "
                  "California's RPS does not count large hydro as renewable, so California utility labels show lower shares.",
-    "retail_price": "Average retail price = total retail revenue / retail sales, all customer classes (EIA-861).",
+    "retail_price": "Average retail price = total retail revenue / retail sales, all customer classes (EIA-861). "
+                    "Includes the small utilities that file EIA's short form (EIA-861S).",
 }
 
 
@@ -77,13 +78,23 @@ def main(argv=None) -> int:
     warn, info = [], []
 
     # ---- Customers and retail prices (EIA-861) ----
-    rows = eia861.load_sales(sources.eia_861(y), y)
+    # Long form + short form (EIA-861S, small utilities), with documented BA corrections and the
+    # California parts of neighboring BAs keyed "<BA>-CA" (see groups.py).
+    long_rows = eia861.load_sales(sources.eia_861(y), y)
+    short_rows = eia861.load_short_form(sources.eia_861(y), y)
+    dup = {(r[eia861.C_ID], r[eia861.C_STATE]) for r in long_rows} & {(r[eia861.C_ID], r[eia861.C_STATE]) for r in short_rows}
+    if dup:
+        warn.append(f"EIA-861: {len(dup)} utility-states appear in both the long and short form (counted twice): {sorted(dup)[:5]}")
+    sf_cust = sum(r[eia861.C_CUST] for r in short_rows if isinstance(r[eia861.C_CUST], (int, float)))
+    info.append(f"EIA-861 short form: {len(short_rows)} small utilities, {sf_cust:,.0f} customer accounts included as bundled sales")
+    rows = groups.corrected_rows(long_rows + short_rows)
     totals, notes = eia861.iso_totals(rows)
     info += notes
     utils = eia861.utilities(rows)
 
     # ---- Generation mix by region (EIA-923) ----
-    plants, n923 = eia923.load(sources.eia_923(y), y)
+    plants_split, n923 = eia923.load(sources.eia_923(y), y, split_ca=groups.SPLIT_CA)
+    plants = eia923.merge_split(plants_split)  # whole BAs, for the ISOs and import tracing
     info += n923
 
     # ---- CAISO imports: EIA-930 flows traced to source grids ----
@@ -175,7 +186,9 @@ def main(argv=None) -> int:
         warn.append(f"Boundary names not recognised: {unknown}")
 
     # ---- Regions without an ISO: groups of balancing authorities ----
-    gdata, gutils, gshapes = groups.build(rows, plants, gj["features"], warn, info)
+    gdata, gutils, gshapes = groups.build(rows, plants_split, gj["features"], warn, info)
+    corrections = [{"name": c["name"], "ba": c["ba"], "reason": c["reason"]} for c in groups.BA_CORRECTIONS.values()]
+    corrections += [{"name": n, "ba": None, "reason": r} for n, r in {**groups.CEC_TO_CAISO, **groups.CA_OTHER_NOT_DRAWN}.items()]
 
     built = datetime.now(timezone.utc).isoformat()
     store.put_json(f"{PREFIX}/regions.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": NOTES, "regions": regions}, "public, max-age=86400")
@@ -183,7 +196,8 @@ def main(argv=None) -> int:
     store.put_json(f"{PREFIX}/residual.json", resid, "public, max-age=86400")
     store.put_json(f"{PREFIX}/boundaries.geojson", gj, "public, max-age=86400")
     store.put_json(f"{PREFIX}/groups.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": groups.NOTES,
-                                             "excluded": groups.EXCLUDED, "groups": gdata, "utilities": gutils}, "public, max-age=86400")
+                                             "excluded": groups.EXCLUDED, "corrections": corrections,
+                                             "groups": gdata, "utilities": gutils}, "public, max-age=86400")
     store.put_json(f"{PREFIX}/groups.geojson", {"type": "FeatureCollection", "features": gshapes}, "public, max-age=86400")
 
     with open(a.checks_file, "w", encoding="utf-8") as fh:

@@ -137,3 +137,24 @@ def hifld_control_areas() -> Path:
         "geometryPrecision": "3",
         "f": "geojson",
     })
+
+
+# California Energy Commission layers (free for public use with credit: energy.ca.gov/conditions-of-use).
+CEC_LAYERS = {
+    "ba": "Balancing_Authority",                             # California balancing authority areas (8 BAs)
+    "utilities": "ElectricLoadServingEntities_IOU_POU",      # utility service areas (IOUs and public utilities)
+    "utilities_other": "ElectricLoadServingEntities_Other",  # co-ops, federal, tribal, CCAs
+}
+CEC_URL = "https://services3.arcgis.com/bWPjFyq029ChCGur/ArcGIS/rest/services/{name}/FeatureServer/0/query"
+
+
+def cec_layer(kind: str) -> Path:
+    name = CEC_LAYERS[kind]
+    return cached(f"cec/{name}.geojson", CEC_URL.format(name=name), params={
+        "where": "1=1",
+        "outFields": "*",
+        "outSR": "4326",
+        "maxAllowableOffset": "0.005",
+        "geometryPrecision": "4",
+        "f": "geojson",
+    })

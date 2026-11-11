@@ -32,8 +32,11 @@ CATEGORIES = ["solar", "wind", "hydro", "geothermal", "biomass", "nuclear", "gas
 RENEWABLE = {"solar", "wind", "hydro", "geothermal", "biomass"}
 
 
-def load(zip_path: Path, year: int) -> tuple[dict, list[str]]:
-    """Annual MWh by category for every balancing authority, plus notes (unknown fuel codes)."""
+def load(zip_path: Path, year: int, split_ca: set | None = None) -> tuple[dict, list[str]]:
+    """Annual MWh by category for every balancing authority, plus notes (unknown fuel codes).
+
+    split_ca: BA codes whose California plants are keyed separately as "<BA>-CA" (see groups.py);
+    merge_split() undoes it."""
     name = f"EIA923_Schedules_2_3_4_5_M_12_{year}_Final.xlsx"
     with zipfile.ZipFile(zip_path) as zf:
         data = zf.read(name)
@@ -47,6 +50,7 @@ def load(zip_path: Path, year: int) -> tuple[dict, list[str]]:
     ba = header.index("Balancing Authority Code")
     fuel = header.index("Reported Fuel Type Code")
     ng = header.index("Net Generation (Megawatthours)")
+    st = header.index("Plant State")
     out = defaultdict(lambda: defaultdict(float))
     unknown = defaultdict(float)
     for r in rows:
@@ -59,7 +63,8 @@ def load(zip_path: Path, year: int) -> tuple[dict, list[str]]:
         if cat is None:
             unknown[r[fuel]] += v
             cat = "other"
-        out[r[ba]][cat] += v
+        key = f"{r[ba]}-CA" if split_ca and r[ba] in split_ca and r[st] == "CA" else r[ba]
+        out[key][cat] += v
     notes = [f"EIA-923 fuel code {k!r} not mapped ({v/1e3:.0f} GWh), counted as other" for k, v in unknown.items() if abs(v) > 1000]
     return {k: dict(v) for k, v in out.items()}, notes
 
@@ -71,3 +76,14 @@ def mix(annual: dict) -> tuple[dict, float, float]:
     shares = {k: round(v / tot, 5) for k, v in sorted(gen.items(), key=lambda x: -x[1])} if tot else {}
     ren = sum(v for k, v in gen.items() if k in RENEWABLE) / tot if tot else 0
     return shares, ren, tot
+
+
+def merge_split(plants: dict) -> dict:
+    """Undo load(split_ca=...): add each "<BA>-CA" entry back into its BA."""
+    out: dict = {}
+    for k, v in plants.items():
+        base = k[:-3] if isinstance(k, str) and k.endswith("-CA") else k
+        d = out.setdefault(base, {})
+        for c, x in v.items():
+            d[c] = d.get(c, 0) + x
+    return out

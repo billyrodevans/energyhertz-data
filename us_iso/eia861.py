@@ -43,6 +43,31 @@ def load_sales(zip_path: Path, year: int) -> list[tuple]:
     return [r for r in rows[3:] if r and r[C_ID] is not None]
 
 
+# Short form (EIA-861S): ~1,700 small utilities that report only totals per state. Their rows are
+# turned into the long-form layout as Part "A" (bundled: 861S filers sell energy and delivery
+# together), so every region total includes them.
+SF_ID, SF_NAME, SF_OWNER, SF_STATE, SF_BA, SF_REV, SF_MWH, SF_CUST = 1, 2, 3, 4, 5, 6, 7, 8
+
+
+def load_short_form(zip_path: Path, year: int) -> list[tuple]:
+    with zipfile.ZipFile(zip_path) as zf:
+        data = zf.read(f"Short_Form_{year}.xlsx")
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    rows = list(wb.worksheets[0].iter_rows(values_only=True))
+    h = rows[0]
+    assert (h[SF_ID], h[SF_STATE], h[SF_BA], h[SF_CUST]) == ("Utility Number", "State", "BA Code", "Total Customers"), "EIA-861S layout changed"
+    out = []
+    for r in rows[1:]:
+        if not r or r[SF_ID] is None:
+            continue
+        t = [None] * (C_CUST + 1)
+        t[C_YEAR], t[C_ID], t[C_NAME], t[C_PART] = year, r[SF_ID], r[SF_NAME], "A"
+        t[C_STATE], t[C_OWNER], t[C_BA] = r[SF_STATE], r[SF_OWNER], r[SF_BA]
+        t[C_REV], t[C_MWH], t[C_CUST] = r[SF_REV], r[SF_MWH], r[SF_CUST]
+        out.append(tuple(t))
+    return out
+
+
 def iso_totals(rows: list[tuple], region_of: dict | None = None) -> tuple[dict, list[str]]:
     """Customers, MWh, revenue and average price per region (default: ISO), plus check messages.
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 # Group id -> display name and member BA codes (EIA codes, as used in EIA-861 / EIA-923 / EIA-930).
 GROUPS: dict[str, dict] = {
-    "CA-OTHER": {"name": "California outside CAISO", "bas": ["LDWP", "BANC", "IID", "TIDC"]},
+    "CA-OTHER": {"name": "California outside CAISO", "bas": ["LDWP", "BANC", "IID", "TIDC", "PACW-CA", "NEVP-CA", "WALC-CA"]},
     "FLORIDA": {"name": "Florida", "bas": ["FPL", "FPC", "TEC", "SEC", "FMPP", "JEA", "TAL", "GVL", "HST"]},
     "SOUTHEAST": {"name": "Southeast", "bas": ["SOCO", "TVA", "DUK", "CPLE", "CPLW", "SC", "SCEG", "LGEE", "SEPA", "YAD"]},
     "CENTRAL": {"name": "Central (AECI, SPA)", "bas": ["AECI", "SPA"]},
@@ -24,6 +24,46 @@ GROUPS: dict[str, dict] = {
     "NORTHWEST": {"name": "Northwest", "bas": ["BPAT", "PACW", "PSEI", "PGE", "SCL", "TPWR", "AVA", "GCPD", "CHPD", "DOPD", "IPCO", "NWMT", "GWA", "WWA", "GRID", "AVRN"]},
 }
 GROUP_ORDER = list(GROUPS)
+
+# BAs that reach into California from a neighboring state. Their California rows (EIA-861 by state,
+# EIA-923 by plant state) are keyed "<BA>-CA" and belong to "California outside CAISO"; the rest of
+# each BA stays in its own group. The California Energy Commission lists 8 BAs in California:
+# CAISO, BANC, LADWP, IID, TID, PacifiCorp West, NV Energy and WALC (Balancing Authority Areas map).
+SPLIT_CA = {"PACW", "NEVP", "WALC"}
+
+# Corrections to the BA a utility reports on EIA-861, each with its primary source (shown on the page).
+# Keyed by EIA utility number; "state" limits the correction to one state (None = all states).
+BA_CORRECTIONS = {
+    57483: {"name": "Liberty Utilities (CalPeco)", "state": "CA", "ba": "NEVP",
+            "reason": "EIA-861 reports CAISO, but Liberty's California territory is in NV Energy's balancing authority "
+                      "area, not CAISO's (CPUC filings; CEC Balancing Authority Areas map)."},
+    19840: {"name": "Valley Electric Association", "state": None, "ba": "CISO",
+            "reason": "EIA-861 reports NV Energy, but VEA joined the CAISO balancing authority area as a participating "
+                      "transmission owner in 2013 (CAISO); CAISO publishes a VEA price area."},
+    694: {"name": "Anza Electric Cooperative", "state": "CA", "ba": "CISO",
+          "reason": "EIA-861 short form reports WALC, but the CEC Balancing Authority Areas map places Anza's territory "
+                    "in CAISO, and EIA's plant record for the Anza solar plant on its lines reports CAISO."},
+}
+
+
+def corrected_ba(uid, state, ba):
+    """BA code after BA_CORRECTIONS, then "-CA" for the California part of SPLIT_CA BAs."""
+    c = BA_CORRECTIONS.get(uid)
+    if c and (c["state"] is None or c["state"] == state):
+        ba = c["ba"]
+    if ba in SPLIT_CA and state == "CA":
+        ba = f"{ba}-CA"
+    return ba
+
+
+def corrected_rows(rows):
+    """EIA-861 rows (long layout) with the BA column corrected (see corrected_ba)."""
+    from .eia861 import C_BA, C_ID, C_STATE
+    out = []
+    for r in rows:
+        ba = corrected_ba(r[C_ID], r[C_STATE], r[C_BA])
+        out.append(r if ba == r[C_BA] else r[:C_BA] + (ba,) + r[C_BA + 1:])
+    return out
 GROUP_OF = {ba: g for g, v in GROUPS.items() for ba in v["bas"]}
 
 # BA codes deliberately left out of every region, with the reason (shown in the checks and on the page).
@@ -52,7 +92,7 @@ BA_NAMES = {
     "AECI": "Associated Electric Cooperative", "SPA": "Southwestern Power Administration",
     "AZPS": "Arizona Public Service", "SRP": "Salt River Project", "TEPC": "Tucson Electric Power",
     "PNM": "Public Service Co. of New Mexico", "EPE": "El Paso Electric", "WALC": "WAPA Desert Southwest",
-    "NEVP": "Nevada Power (NV Energy)", "DEAA": "Arlington Valley", "GRIF": "Griffith Energy",
+    "NEVP": "NV Energy", "DEAA": "Arlington Valley", "GRIF": "Griffith Energy",
     "GRIS": "Gridforce South",
     "PSCO": "Public Service Co. of Colorado (Xcel)", "PACE": "PacifiCorp East", "WACM": "WAPA Rocky Mountain",
     "WAUW": "WAPA Upper Great Plains West",
@@ -61,6 +101,8 @@ BA_NAMES = {
     "GCPD": "Grant County PUD", "CHPD": "Chelan County PUD", "DOPD": "Douglas County PUD",
     "IPCO": "Idaho Power", "NWMT": "NorthWestern Energy (Montana)", "GWA": "NaturEner Power Watch",
     "WWA": "NaturEner Wind Watch", "GRID": "Gridforce Energy Management", "AVRN": "Avangrid Renewables",
+    "PACW-CA": "PacifiCorp West (California part)", "NEVP-CA": "NV Energy (California part)",
+    "WALC-CA": "WAPA Desert Southwest (California part)",
 }
 
 # Facts shown on a BA row (checked against primary sources).
@@ -104,32 +146,93 @@ def hifld_code(name: str) -> str | None:
     return None
 
 
-# HIFLD outlines overlap. Where a BA overlaps an ISO outline, the ISO normally wins: co-op and federal
-# BAs (AECI, SPA, WAPA, ...) interleave county by county with ISO utilities. These BAs are compact
-# city/district service areas that are known not to be in the ISO drawn over them, so their own
-# outline wins and is cut out of the ISO outline (e.g. SMUD, Modesto ID, Roseville and Redding in BANC
-# are not CAISO). Checked against PG&E/SCE towns nearby (none fall inside). Not El Paso Electric: its
-# HIFLD outline is far too broad (covers ERCOT towns such as Fort Stockton, Alpine and Presidio).
-BA_PRIORITY = {"BANC", "TIDC", "LDWP", "IID"}
+# ---- California outlines: California Energy Commission (CEC) layers ----
+# HIFLD's CAISO outline covers nearly all of California, so inside California the CEC layers are used.
+# CEC "Balancing Authority Areas": BANC, CALISO, IID, LADWP, NV Energy, TID, WALC, PacificCorp West.
+CEC_NON_CAISO = {"BANC", "IID", "LADWP", "NV Energy", "TID", "WALC", "PacificCorp West"}
+# Utilities listed under "California outside CAISO" (EIA-861 name -> CEC service-area name). Their
+# CEC service areas are added to the outline so every listed utility is highlighted on the map.
+CA_OTHER_UTILITY_AREAS = {
+    "Los Angeles Department of Water & Power": "Los Angeles Department of Water & Power",
+    "City of Burbank Water and Power - (CA)": "Burbank Water & Power",
+    "City of Glendale - (CA)": "Glendale Water & Power",
+    "Sacramento Municipal Util Dist": "Sacramento Municipal Utility District",
+    "Modesto Irrigation District": "Modesto Irrigation District",
+    "City of Roseville - (CA)": "Roseville Electric",
+    "City of Redding - (CA)": "Redding Electric Utility",
+    "City of Shasta Lake - (CA)": "City of Shasta Lake",
+    "Trinity Public Utilities Dist": "Trinity Public Utilities District",
+    "Imperial Irrigation District": "Imperial Irrigation District",
+    "Turlock Irrigation District": "Turlock Irrigation District",
+    "PacifiCorp": "PacifiCorp",
+    "Surprise Valley Electrification": "Surprise Valley Electrification Corporation",
+    "Truckee Donner P U D": "Truckee Donner Public Utilities District",
+    "Liberty Utilities": "Liberty Utilities",
+    "City of Needles - (CA)": "City of Needles",
+    "Aha Macav Power Service": "Aha Macav Power Service",
+}
+# Listed, but not drawn: the CEC area for WAPA covers federal customers across the state (74% inside
+# CAISO's area), which doesn't match the WALC code EIA-861 reports for its California customers.
+CA_OTHER_NOT_DRAWN = {
+    "WAPA-- Western Area Power Administration":
+        "WAPA's California retail customers are reported under WALC (EIA-861), but its CEC service area lies "
+        "mostly in CAISO's area; listed without a highlighted area.",
+    "Colorado River Indian Irr Proj":
+        "Bureau of Indian Affairs utility on the Colorado River Indian Reservation (Arizona and California), reported "
+        "under WALC; the CEC has no service-area map for it, so it has no highlighted area of its own.",
+}
+# Areas inside a non-CAISO CEC polygon that are in CAISO: cut out of "California outside CAISO".
+CEC_TO_CAISO = {
+    "Merced Irrigation District": "Left TID's balancing authority area to join CAISO's (CAISO 2013 transition "
+                                  "agreement); EIA-861 reports CAISO.",
+}
 
 
-def group_shapes(features: list[dict], iso_features: list[dict], simplify: float = 0.01) -> tuple[list[dict], list[str]]:
-    """One (multi)polygon per group: union of member BA areas, minus ISO areas and earlier groups.
+def _features_by(features, key):
+    from shapely.geometry import shape
+    from shapely.ops import unary_union
+    out = {}
+    for f in features:
+        out.setdefault(f["properties"].get(key), []).append(shape(f["geometry"]).buffer(0))
+    return {k: unary_union(v) for k, v in out.items()}
 
-    BA_PRIORITY areas are cut out of the ISO outlines instead (iso_features are changed in place)."""
-    from shapely.geometry import mapping, shape
+
+def group_shapes(features: list[dict], iso_features: list[dict], cec_ba: list[dict], cec_utils: list[dict],
+                 simplify: float = 0.01) -> tuple[list[dict], list[str], dict]:
+    """One (multi)polygon per group, plus notes and the California shapes (for the utility check).
+
+    California: "California outside CAISO" = CEC non-CAISO BA areas + CEC service areas of the utilities
+    listed there, minus CEC_TO_CAISO areas. CAISO's outline inside California becomes the rest of the
+    state (iso_features are changed in place); outside California it stays HIFLD's.
+    Elsewhere: union of member BA areas (HIFLD Control Areas) minus ISO areas, California and earlier groups."""
+    from shapely.geometry import MultiPolygon, mapping, shape
     from shapely.ops import unary_union
 
     notes = []
-    prio = unary_union([shape(f["geometry"]).buffer(0) for f in features
-                        if hifld_code(f["properties"].get("NAME", "")) in BA_PRIORITY])
+    ba_polys = _features_by(cec_ba, "NAME")
+    util_polys = _features_by(cec_utils, "Utility")
+    missing = CEC_NON_CAISO - set(ba_polys)
+    if missing:
+        notes.append(f"CEC BA layer is missing {sorted(missing)}")
+    california = unary_union(list(ba_polys.values()))
+    for name in CA_OTHER_UTILITY_AREAS.values():
+        if name not in util_polys:
+            notes.append(f"CEC service area {name!r} not found (utility listed, area not drawn)")
+    ca_other = unary_union([ba_polys[n] for n in CEC_NON_CAISO if n in ba_polys]
+                           + [util_polys[n] for n in CA_OTHER_UTILITY_AREAS.values() if n in util_polys])
+    to_caiso = unary_union([util_polys[n] for n in CEC_TO_CAISO if n in util_polys])
+    ca_other = _polygonal(ca_other.difference(to_caiso).intersection(california))
+    caiso_ca = _polygonal(california.difference(ca_other))
+
     for f in iso_features:
         g0 = shape(f["geometry"]).buffer(0)
-        cut = g0.intersection(prio).area
-        if cut > 0.0025:
-            f["geometry"] = _round(mapping(g0.difference(prio)))
-            notes.append(f"ISO outline {f['properties'].get('iso')}: {cut / g0.area:.1%} of its area cut out for "
-                         f"BAs drawn with priority ({', '.join(sorted(BA_PRIORITY))})")
+        if f["properties"].get("iso") == "CAISO":
+            f["geometry"] = _round(mapping(_polygonal(g0.difference(california).union(caiso_ca).simplify(simplify / 2))))
+            notes.append("CAISO outline: inside California from the CEC Balancing Authority Areas layer "
+                         "(state area minus the non-CAISO areas); outside California from HIFLD")
+        elif g0.intersection(california).area > 0.0025:
+            f["geometry"] = _round(mapping(_polygonal(g0.difference(california))))
+            notes.append(f"ISO outline {f['properties'].get('iso')}: California part removed")
     iso = unary_union([shape(f["geometry"]).buffer(0) for f in iso_features])
     members: dict[str, list] = {g: [] for g in GROUP_ORDER}
     for f in features:
@@ -142,26 +245,74 @@ def group_shapes(features: list[dict], iso_features: list[dict], simplify: float
             notes.append(f"Control area {name!r} ({code}) is not in any group")
             continue
         members[g].append(shape(f["geometry"]).buffer(0))
-    taken = iso
+    taken = unary_union([iso, california])
     out = []
     for g in GROUP_ORDER:
-        if not members[g]:
+        if g == "CA-OTHER":
+            geom, tol, keep = ca_other, simplify / 4, 0.0002  # keep small California districts (~2 km2 and up)
+        elif not members[g]:
             notes.append(f"Group {g}: no boundary polygons found")
             continue
-        geom = unary_union(members[g]).difference(taken)
-        taken = unary_union([taken, geom])
-        geom = geom.simplify(simplify, preserve_topology=True)
-        # drop slivers left by overlapping outlines (< ~25 km2)
+        else:
+            geom = unary_union(members[g]).difference(taken)
+            taken = unary_union([taken, geom])
+            tol, keep = simplify, 0.0025  # drop slivers left by overlapping outlines (< ~25 km2)
+        geom = _polygonal(geom.simplify(tol, preserve_topology=True))
         if geom.geom_type == "MultiPolygon":
-            from shapely.geometry import MultiPolygon
-            geom = MultiPolygon([p for p in geom.geoms if p.area > 0.0025])
+            geom = MultiPolygon([p for p in geom.geoms if p.area > keep])
         out.append({"type": "Feature", "properties": {"group": g, "name": GROUPS[g]["name"]},
                     "geometry": _round(mapping(geom))})
     for g in GROUP_ORDER:
+        if g == "CA-OTHER":
+            continue  # California outlines come from the CEC layers
         for ba in GROUPS[g]["bas"]:
             if not any(hifld_code(f["properties"].get("NAME", "")) == ba for f in features):
                 notes.append(f"{ba} ({g}) has no HIFLD control-area polygon; its figures are included, its area is not drawn")
-    return out, notes
+    return out, notes, {"ca_other": ca_other, "caiso_ca": caiso_ca, "utils": util_polys}
+
+
+def check_ca_utilities(rows, shapes, warn, info):
+    """Every utility listed under "California outside CAISO" must sit inside its highlighted area."""
+    from .eia861 import C_BA, C_CUST, C_NAME, C_OWNER, C_PART, C_STATE
+    listed, owner = {}, {}
+    for r in rows:
+        if (r[C_STATE] == "CA" and GROUP_OF.get(r[C_BA]) == "CA-OTHER" and r[C_PART] != "B"
+                and isinstance(r[C_CUST], (int, float)) and r[C_CUST] > 0):
+            listed[r[C_NAME]] = listed.get(r[C_NAME], 0) + r[C_CUST]
+            owner[r[C_NAME]] = r[C_OWNER]
+    utils, ca_other = shapes["utils"], shapes["ca_other"]
+    for name, cust in sorted(listed.items(), key=lambda x: -x[1]):
+        if name in CA_OTHER_NOT_DRAWN:
+            info.append(f"California outside CAISO: {name} ({cust:,.0f} accounts) listed, not drawn: {CA_OTHER_NOT_DRAWN[name]}")
+            continue
+        area = CA_OTHER_UTILITY_AREAS.get(name)
+        if area is None:
+            if owner.get(name) == "Behind the Meter" or str(name).startswith("Adjustment"):
+                # rooftop-solar sellers and EIA's adjustment rows have no service territory
+                info.append(f"California outside CAISO: {name} ({cust:,.0f} accounts): {owner.get(name) or 'EIA adjustment'}, no territory")
+            else:
+                warn.append(f"California outside CAISO: {name} ({cust:,.0f} accounts) is a utility with no mapped service area")
+            continue
+        g = utils.get(area)
+        inside = g.intersection(ca_other).area / g.area if g is not None and g.area else 0
+        (info if inside > 0.95 else warn).append(
+            f"California outside CAISO: {name} ({cust:,.0f} accounts): {inside:.0%} of its CEC service area highlighted")
+    for name, why in CEC_TO_CAISO.items():
+        g = utils.get(name)
+        if g is not None:
+            info.append(f"{name}: {g.intersection(ca_other).area / g.area:.0%} inside the highlighted area after correction ({why})")
+
+
+def _polygonal(geom):
+    """Keep only the polygon parts (intersections can add stray lines or points)."""
+    from shapely.geometry import MultiPolygon, Polygon
+    if isinstance(geom, (Polygon, MultiPolygon)):
+        return geom
+    parts = []
+    for g in getattr(geom, "geoms", []):
+        g = _polygonal(g)
+        parts += list(g.geoms) if isinstance(g, MultiPolygon) else [g] if isinstance(g, Polygon) else []
+    return MultiPolygon(parts)
 
 
 def _round(geom: dict, nd: int = 3) -> dict:
@@ -181,6 +332,10 @@ NOTES = {
                   "power plant (EIA-923). A BA's area can be non-contiguous and overlap others; outlines are approximate.",
     "generation_only": "Some BAs only balance their own power plants and serve no retail customers; they count toward "
                        "generation only.",
+    "california": "California outside CAISO includes every California balancing authority other than CAISO (the "
+                  "California Energy Commission lists 8 in the state): BANC, LADWP, IID and TID, plus the California "
+                  "parts of PacifiCorp West, NV Energy and WAPA Desert Southwest. California outlines are from the "
+                  "California Energy Commission (balancing authority areas and utility service areas).",
 }
 
 
@@ -257,6 +412,13 @@ def build(rows, plants, iso_features, warn, info):
 
     gutils = eia861.utilities(rows, GROUP_OF)
     ca = json.loads(sources.hifld_control_areas().read_text(encoding="utf-8"))
-    shapes, snotes = group_shapes(ca["features"], iso_features)
+
+    def cec(kind):
+        return json.loads(sources.cec_layer(kind).read_text(encoding="utf-8"))["features"]
+
+    shapes, snotes, ca_shapes = group_shapes(ca["features"], iso_features, cec("ba"), cec("utilities") + cec("utilities_other"))
     info += snotes
+    check_ca_utilities(rows, ca_shapes, warn, info)
+    for c in BA_CORRECTIONS.values():
+        info.append(f"BA correction: {c['name']} -> {c['ba']}: {c['reason']}")
     return out, gutils, shapes
