@@ -53,7 +53,8 @@ NOTES = {
            "or customer actually buys can differ because of purchase agreements and imports.",
     "caiso_imports": "CAISO imports are estimated: hourly power flows between Western grids (EIA-930) traced "
                      "back to the generating grids, whose 'other' generation is split using EIA-923 plant data.",
-    "renewable": "Renewable = solar, wind, hydro (all sizes), geothermal and biomass.",
+    "renewable": "Renewable = solar, wind, hydro (all sizes), geothermal and biomass, following EIA. "
+                 "California's RPS does not count large hydro as renewable, so California utility labels show lower shares.",
     "retail_price": "Average retail price = total retail revenue / retail sales, all customer classes (EIA-861).",
 }
 
