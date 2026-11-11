@@ -23,7 +23,7 @@ Values are published exactly as CAISO publishes them: no rounding, filling or sm
 - All five price files are present, from the RTPD market, with no duplicate rows
 - Every node has all five components, and LMP = energy + congestion + loss + GHG, allowing only for rounding in CAISO's published numbers (about 7 significant digits: ~$0.00001 at $50, ~$0.00013 at $2,000). Verified on 301,744 node-intervals
 - Intervals are 15 minutes long and fall inside the requested hour
-- LMPs outside −$5,000 to $5,000/MWh are flagged for review. These are sanity bounds for corrupted data, not market limits: real LMPs can pass CAISO's −$150 bid floor. Flagged values are still published as-is
+- LMPs outside −$5,000 to $5,000/MWh are flagged for review. These are sanity bounds for corrupted data, not market limits: real LMPs can pass CAISO's −$150 bid floor. Flagged values are still published as-is, listed in each interval file's `outliers` field, and marked on the map with a caution triangle
 - Node coordinates are inside the Western US, and over 95% of mapped nodes match an OASIS price node by exact ID
 
 **Errors** block publishing: the site keeps the last good data. **Warnings** publish but alert. Either one opens or updates a GitHub issue titled "Data alert: CAISO LMP". A missing interval is retried once; if it is still missing, it shows as "no data" and is never filled in.
@@ -34,7 +34,7 @@ Values are published exactly as CAISO publishes them: no rounding, filling or sm
 |---|---|
 | `index.json` | Available intervals, last run status, source and attribution |
 | `nodes.json` | `{node_id: {lat, lon, area, type}}` |
-| `intervals/YYYYMMDDTHHMMZ.json` | Interval start/end (UTC), CAISO file names, OASIS request URL, retrieval time, warnings, and `prices: {node_id: [lmp, energy, congestion, loss, ghg]}` |
+| `intervals/YYYYMMDDTHHMMZ.json` | Interval start/end (UTC), CAISO file names, OASIS request URL, retrieval time, warnings, `outliers` (node IDs outside the sanity bounds), and `prices: {node_id: [lmp, energy, congestion, loss, ghg]}` |
 
 ## Run it yourself
 

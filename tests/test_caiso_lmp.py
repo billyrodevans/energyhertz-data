@@ -97,6 +97,16 @@ def test_real_prices_past_bid_floor_do_not_alert():
     assert validate.check_interval(start, values[start], meta[start]["end"]) == []
 
 
+def test_outliers_are_listed_for_the_map():
+    nodes = {
+        "NORMAL": {"lmp": 42.0},
+        "HIGH": {"lmp": 9999.0},
+        "LOW": {"lmp": -6000.0},
+        "EDGE": {"lmp": 5000.0},  # on the bound: not an outlier
+    }
+    assert validate.find_outliers(nodes) == ["HIGH", "LOW"]
+
+
 def test_missing_interval_is_info_first_then_warning_on_retry():
     hour = datetime(2026, 11, 8, 3, tzinfo=timezone.utc)
     got = ["2026-11-08T03:00:00+00:00"]

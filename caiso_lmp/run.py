@@ -99,6 +99,7 @@ def process_hour(store, hour_start: datetime, located: dict, issues: list[Issue]
             continue
 
         warnings = [str(i) for i in interval_issues if i.severity == "warning"]
+        outliers = validate.find_outliers(nodes)
         key = publish.interval_key(start)
         store.put_json(key, {
             "interval_start_utc": start,
@@ -112,6 +113,9 @@ def process_hour(store, hour_start: datetime, located: dict, issues: list[Issue]
             "retrieved_utc": raw.retrieved_utc.isoformat(),
             "node_count": len(nodes),
             "warnings": warnings,
+            # Nodes with LMP outside the sanity bounds: published as-is, marked on the map.
+            "outlier_bounds": [config.PLAUSIBLE_MIN, config.PLAUSIBLE_MAX],
+            "outliers": outliers,
             # Values exactly as published by CAISO, in the order of "fields".
             "prices": {n: [v[f] for f in config.FIELD_ORDER] for n, v in sorted(nodes.items())},
         }, publish.CACHE_INTERVAL)
@@ -121,6 +125,7 @@ def process_hour(store, hour_start: datetime, located: dict, issues: list[Issue]
             "file": key.rsplit("/", 1)[-1],
             "nodes": len(nodes),
             "warnings": len(warnings),
+            "outliers": len(outliers),
             "retrieved_utc": raw.retrieved_utc.isoformat(),
         })
     return entries, unpriced

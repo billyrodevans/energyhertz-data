@@ -37,6 +37,15 @@ def value_uncertainty(value: float) -> float:
     return step + config.DECIMAL_STEP
 
 
+def find_outliers(nodes: dict[str, dict[str, float]]) -> list[str]:
+    """Nodes whose LMP is outside the sanity bounds. They are still published, and the map
+    marks them with a caution triangle; this list goes into each interval file."""
+    return sorted(
+        n for n, v in nodes.items()
+        if "lmp" in v and not (config.PLAUSIBLE_MIN <= v["lmp"] <= config.PLAUSIBLE_MAX)
+    )
+
+
 def check_interval(start_iso: str, nodes: dict[str, dict[str, float]], end_iso: str) -> list[Issue]:
     """Checks for one 15-minute interval."""
     issues: list[Issue] = []
