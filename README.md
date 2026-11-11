@@ -34,6 +34,7 @@ Values are published exactly as CAISO publishes them: no rounding, filling or sm
 |---|---|
 | `index.json` | Available intervals, last run status, source and attribution |
 | `nodes.json` | `{node_id: {lat, lon, area, type}}` |
+| `day.json` | Whole window in one file for the map slider: each mapped node's LMP rounded to the cent (colors only) plus one fixed color scale (2nd–98th percentile of the window). Exact values stay in `intervals/` |
 | `intervals/YYYYMMDDTHHMMZ.json` | Interval start/end (UTC), CAISO file names, OASIS request URL, retrieval time, warnings, `outliers` (node IDs outside the sanity bounds), and `prices: {node_id: [lmp, energy, congestion, loss, ghg]}` |
 
 ## Run it yourself

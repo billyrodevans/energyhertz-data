@@ -17,7 +17,7 @@ import argparse
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import config, fetch, publish, transform, validate
+from . import config, day, fetch, publish, transform, validate
 from .validate import Issue
 
 
@@ -190,6 +190,18 @@ def main(argv: list[str] | None = None) -> int:
         "unpriced_map_nodes": previous_unpriced or [],
     }
     index = publish.prune_and_index(store, entries, status)
+
+    # One-file summary of the whole window for the map's smooth slider (colors only).
+    try:
+        day_file = day.build_day(store, index, located)
+        if day_file:
+            store.put_json(f"{config.R2_PREFIX}/day.json", day_file, publish.CACHE_INDEX)
+            print(f"day.json: {len(day_file['intervals'])} intervals x {len(day_file['nodes'])} nodes, "
+                  f"scale ${day_file['scale']['low']} to ${day_file['scale']['high']}")
+    except Exception as exc:  # the exact interval files are already published; flag and carry on
+        issue = Issue("warning", "day-file", f"Could not build day.json (map falls back to per-interval files): {exc}")
+        issues.append(issue)
+        alerts.append(issue)
 
     print(f"Result: {status['result']}  published {len(entries)} intervals, "
           f"{len(index['intervals'])} kept, {len(errors)} errors, {len(warnings)} warnings")

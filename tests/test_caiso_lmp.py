@@ -144,6 +144,26 @@ def test_retention_keeps_newest_100(tmp_path):
     assert index["intervals"][0]["start"] == entries[4]["start"]
 
 
+def test_day_file_rounds_to_cents_and_fixes_one_scale(tmp_path):
+    from caiso_lmp import day
+
+    store = LocalStore(tmp_path)
+    located = {"A": {}, "B": {}, "C": {}}
+    intervals = [
+        ("2026-11-08T03:00:00+00:00", {"A": [48.11636], "B": [-6.8], "C": [1093.5219]}),
+        ("2026-11-08T03:15:00+00:00", {"A": [50.0], "B": [-2.004]}),  # C missing this interval
+    ]
+    entries = []
+    for start, prices in intervals:
+        key = interval_key(start)
+        store.put_json(key, {"prices": prices}, "")
+        entries.append({"start": start, "end": start, "file": key.rsplit("/", 1)[-1]})
+    out = day.build_day(store, {"intervals": entries}, located)
+    assert out["nodes"] == ["A", "B", "C"]
+    assert out["lmp_cents"] == [[4812, -680, 109352], [5000, -200, None]]  # missing stays missing
+    assert out["scale"]["min"] == -6.8 and out["scale"]["max"] == 1093.5219
+
+
 def test_price_map_rejects_points_outside_west():
     feed = {"l": [{"m": [
         {"t": "Node", "n": "OK", "c": [37.0, -120.0], "a": "CA", "p": "GEN"},
