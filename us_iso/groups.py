@@ -188,12 +188,41 @@ CEC_TO_CAISO = {
 }
 
 
+def rings_to_shape(geometry: dict):
+    """Shapely geometry from an ArcGIS-served GeoJSON (multi)polygon, keeping its holes.
+
+    The HIFLD servers return every ring as its own polygon, with no inner rings: areas are clockwise
+    and holes counter-clockwise (ArcGIS's convention). Merging all parts (as before 2026-11-12) filled
+    the holes, e.g. ~47,000 km2 of Nebraska inside SPP that HIFLD shows as outside it. Here a
+    counter-clockwise ring that lies inside the area built so far is cut out as a hole; any other ring
+    is added. Largest rings go first, so an island inside a hole is added back after the hole is cut.
+    Polygons that already carry inner rings are taken as they are."""
+    from shapely.geometry import LinearRing, Polygon
+    from shapely.ops import unary_union
+    if not geometry:
+        return Polygon()
+    parts = geometry["coordinates"] if geometry["type"] == "MultiPolygon" else [geometry["coordinates"]]
+    rings = []
+    for p in parts:
+        if len(p[0]) < 4:
+            continue
+        poly = Polygon(p[0], [r for r in p[1:] if len(r) > 3]).buffer(0)
+        hole = len(p) == 1 and LinearRing(p[0]).is_ccw
+        rings.append((poly.area, hole, poly))
+    out = Polygon()
+    for _, hole, poly in sorted(rings, key=lambda r: -r[0]):
+        if hole and out.buffer(1e-9).contains(poly):
+            out = out.difference(poly)
+        else:
+            out = unary_union([out, poly])
+    return _polygonal(out)
+
+
 def _features_by(features, key):
-    from shapely.geometry import shape
     from shapely.ops import unary_union
     out = {}
     for f in features:
-        out.setdefault(f["properties"].get(key), []).append(shape(f["geometry"]).buffer(0))
+        out.setdefault(f["properties"].get(key), []).append(rings_to_shape(f["geometry"]))
     return {k: unary_union(v) for k, v in out.items()}
 
 
@@ -244,7 +273,7 @@ def group_shapes(features: list[dict], iso_features: list[dict], cec_ba: list[di
         if g is None:
             notes.append(f"Control area {name!r} ({code}) is not in any group")
             continue
-        members[g].append(shape(f["geometry"]).buffer(0))
+        members[g].append(rings_to_shape(f["geometry"]))
     taken = unary_union([iso, california])
     out = []
     for g in GROUP_ORDER:
@@ -319,6 +348,31 @@ def _round(geom: dict, nd: int = 3) -> dict:
     def r(c):
         return [round(c[0], nd), round(c[1], nd)] if isinstance(c[0], (int, float)) else [r(x) for x in c]
     return {"type": geom["type"], "coordinates": r(geom["coordinates"])}
+
+
+def iso_overlaps(iso_features: list[dict], min_km2: float = 100, simplify: float = 0.01) -> list[dict]:
+    """Areas where two ISO/RTO outlines overlap, one GeoJSON feature per pair.
+
+    HIFLD builds each ISO outline from its members' service territories, which EIA-861 reports by county,
+    so a county served by members of two ISOs falls inside both outlines. The overlap is often real
+    (members' territories are interleaved), so it is shown as such rather than given to one ISO.
+    """
+    import math
+    from shapely.geometry import mapping, shape
+    shapes = [(f["properties"].get("iso"), shape(f["geometry"]).buffer(0)) for f in iso_features if f["properties"].get("iso")]
+    out = []
+    for i, (a, ga) in enumerate(shapes):
+        for b, gb in shapes[i + 1:]:
+            x = _polygonal(ga.intersection(gb))
+            if x.is_empty:
+                continue
+            km2 = x.area * 111.32 ** 2 * math.cos(math.radians(x.centroid.y))
+            if km2 < min_km2:  # slivers where simplified borders touch
+                continue
+            x = _polygonal(x.simplify(simplify, preserve_topology=True))
+            out.append({"type": "Feature", "properties": {"isos": sorted([a, b]), "area_km2": round(km2, -2)},
+                        "geometry": _round(mapping(x))})
+    return out
 
 
 # Short notes published with the data (shown on the page).

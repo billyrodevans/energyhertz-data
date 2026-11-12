@@ -115,3 +115,27 @@ def test_merge_split_adds_california_part_back():
     from us_iso import eia923
     merged = eia923.merge_split({"PACW": {"wind": 5.0}, "PACW-CA": {"wind": 1.0, "hydro": 2.0}})
     assert merged == {"PACW": {"wind": 6.0, "hydro": 2.0}}
+
+
+def test_iso_overlaps_pairs_and_slivers():
+    from us_iso import groups
+    sq = lambda x0, y0, x1, y1: {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}
+    feats = [
+        {"properties": {"iso": "SPP"}, "geometry": sq(-100, 30, -96, 34)},
+        {"properties": {"iso": "ERCOT"}, "geometry": sq(-98, 28, -94, 32)},       # overlaps SPP by 2x2 degrees
+        {"properties": {"iso": "MISO"}, "geometry": sq(-96.0005, 33, -92, 36)},  # touches SPP: sliver only
+    ]
+    out = groups.iso_overlaps(feats)
+    assert [o["properties"]["isos"] for o in out] == [["ERCOT", "SPP"]]
+    assert out[0]["properties"]["area_km2"] > 40000
+
+
+def test_rings_to_shape_keeps_arcgis_holes():
+    from shapely.geometry import Point
+    from us_iso import groups
+    cw = [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]       # area (clockwise)
+    ccw = [[2, 2], [8, 2], [8, 8], [2, 8], [2, 2]]          # hole (counter-clockwise), sent as its own polygon
+    island = [[4, 4], [4, 6], [6, 6], [6, 4], [4, 4]]       # area inside the hole (clockwise)
+    g = groups.rings_to_shape({"type": "MultiPolygon", "coordinates": [[cw], [ccw], [island]]})
+    assert g.contains(Point(1, 1)) and not g.contains(Point(3, 3)) and g.contains(Point(5, 5))
+    assert abs(g.area - (100 - 36 + 4)) < 1e-6

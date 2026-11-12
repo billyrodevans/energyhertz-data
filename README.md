@@ -49,6 +49,7 @@ Feeds the US map on the *Energy Pricing Fundamentals* project page: customers, a
 | `residual.json` | Estimated mix of California's "unspecified" market power | CEC Power Content Labels + EIA-923 + EIA-930 |
 | `boundaries.geojson` | ISO boundaries, simplified | HIFLD (approximate, as of 2020) |
 | `groups.json` | Regions without an ISO: 7 groups of balancing authorities (BAs). Each group lists its member BAs (customers, price, generation, renewable share) and their sums, plus utilities. Groups are a display grouping, not official regions (`us_iso/groups.py`). | EIA Form 861; EIA Form 923 |
+| `overlaps.geojson` | Areas inside two ISO/RTO outlines (HIFLD outlines are county-based), one feature per pair, drawn hatched | HIFLD Independent System Operators (approximate, 2020) |
 | `groups.geojson` | Group outlines: member BA areas merged, ISO areas removed | HIFLD Control Areas (approximate, 2018-2021) |
 
 ### Methods

@@ -25,6 +25,8 @@ import json
 import sys
 from datetime import date, datetime, timezone
 
+from shapely.geometry import mapping
+
 from caiso_lmp.publish import LocalStore, R2Store  # same storage helpers as the price map
 
 from . import caiso_mix, eia861, eia923, eia930, groups, residual, sources
@@ -181,6 +183,8 @@ def main(argv=None) -> int:
     gj = json.loads(sources.hifld_iso_boundaries().read_text(encoding="utf-8"))
     for f in gj["features"]:
         f["properties"]["iso"] = HIFLD_NAMES.get(f["properties"].get("NAME"))
+        # Rebuild with real holes (the server sends holes as separate counter-clockwise polygons).
+        f["geometry"] = groups._round(mapping(groups.rings_to_shape(f["geometry"])))
     unknown = [f["properties"].get("NAME") for f in gj["features"] if not f["properties"]["iso"]]
     if unknown:
         warn.append(f"Boundary names not recognised: {unknown}")
@@ -188,13 +192,24 @@ def main(argv=None) -> int:
     # ---- Regions without an ISO: groups of balancing authorities ----
     gdata, gutils, gshapes = groups.build(rows, plants_split, gj["features"], warn, info)
     corrections = [{"name": c["name"], "ba": c["ba"], "reason": c["reason"]} for c in groups.BA_CORRECTIONS.values()]
+
+    # ---- Overlapping ISO outlines (after the California fix above, which reshapes CAISO) ----
+    overlaps = groups.iso_overlaps(gj["features"])
+    info.append("ISO outline overlaps: " + ", ".join(f"{'/'.join(o['properties']['isos'])} ~{o['properties']['area_km2']:,.0f} km2" for o in overlaps))
+    # Dates of the HIFLD outlines (epoch ms in the layer's fields), so the page can say how old they are.
+    def _day(ms):
+        return datetime.fromtimestamp(ms / 1000, timezone.utc).date().isoformat() if isinstance(ms, (int, float)) else None
+    bdates = {"source": min(filter(None, (_day(f["properties"].get("SOURCEDATE")) for f in gj["features"])), default=None),
+              "validated": max(filter(None, (_day(f["properties"].get("VAL_DATE")) for f in gj["features"])), default=None)}
     corrections += [{"name": n, "ba": None, "reason": r} for n, r in {**groups.CEC_TO_CAISO, **groups.CA_OTHER_NOT_DRAWN}.items()]
 
     built = datetime.now(timezone.utc).isoformat()
-    store.put_json(f"{PREFIX}/regions.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": NOTES, "regions": regions}, "public, max-age=86400")
+    store.put_json(f"{PREFIX}/regions.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": NOTES,
+                                              "boundary_dates": bdates, "regions": regions}, "public, max-age=86400")
     store.put_json(f"{PREFIX}/utilities.json", {"year": y, "built_utc": built, "source": SOURCES["customers_price"], "utilities": utils}, "public, max-age=86400")
     store.put_json(f"{PREFIX}/residual.json", resid, "public, max-age=86400")
     store.put_json(f"{PREFIX}/boundaries.geojson", gj, "public, max-age=86400")
+    store.put_json(f"{PREFIX}/overlaps.geojson", {"type": "FeatureCollection", "features": overlaps}, "public, max-age=86400")
     store.put_json(f"{PREFIX}/groups.json", {"year": y, "built_utc": built, "sources": SOURCES, "notes": groups.NOTES,
                                              "excluded": groups.EXCLUDED, "corrections": corrections,
                                              "groups": gdata, "utilities": gutils}, "public, max-age=86400")
